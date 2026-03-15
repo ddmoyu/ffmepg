@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build_stamp: ${{ steps.meta.outputs.build_stamp }}
+      ffmpeg_version: ${{ steps.meta.outputs.ffmpeg_version }}
       release_tag: ${{ steps.meta.outputs.release_tag }}
       release_name: ${{ steps.meta.outputs.release_name }}
 
@@ -35,6 +36,7 @@ jobs:
 
           {
             echo "build_stamp=${build_stamp}"
+            echo "ffmpeg_version=${FFMPEG_VERSION}"
             echo "release_tag=${release_tag}"
             echo "release_name=${release_name}"
           } >> "${GITHUB_OUTPUT}"
@@ -92,7 +94,7 @@ jobs:
             binary_name: ffmpeg.exe
 
     env:
-      ARCHIVE_NAME: ${{ matrix.artifact_basename }}-${{ env.FFMPEG_VERSION }}-${{ needs.metadata.outputs.build_stamp }}.zip
+      ARCHIVE_NAME: ${{ matrix.artifact_basename }}-${{ needs.metadata.outputs.ffmpeg_version }}-${{ needs.metadata.outputs.build_stamp }}.zip
 
     steps:
       - name: Force LF line endings for checkout
@@ -236,7 +238,7 @@ jobs:
           RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
           RELEASE_NAME: ${{ needs.metadata.outputs.release_name }}
           BUILD_STAMP: ${{ needs.metadata.outputs.build_stamp }}
-          FFMPEG_VERSION: ${{ env.FFMPEG_VERSION }}
+          FFMPEG_VERSION: ${{ needs.metadata.outputs.ffmpeg_version }}
         run: |
           set -euo pipefail
 
@@ -279,7 +281,7 @@ jobs:
           body: |
             Automated cross-platform javm-ffmpeg build.
 
-            Upstream FFmpeg tag: ${{ env.FFMPEG_VERSION }}
+            Upstream FFmpeg tag: ${{ needs.metadata.outputs.ffmpeg_version }}
             Build timestamp (UTC): ${{ needs.metadata.outputs.build_stamp }}
             Source revision: ${{ github.sha }}
 
