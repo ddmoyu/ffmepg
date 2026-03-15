@@ -223,7 +223,6 @@ configure_ffmpeg() {
         --disable-autodetect
         --disable-debug
         --disable-doc
-        --disable-postproc
         --disable-network
         --disable-hwaccels
         --disable-swresample
