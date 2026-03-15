@@ -241,35 +241,35 @@ jobs:
           set -euo pipefail
 
           python3 - <<'PY'
-import json
-import os
-import re
+          import json
+          import os
+          import re
 
-release_dir = "release"
-assets = sorted(name for name in os.listdir(release_dir) if name.endswith(".zip"))
-pattern = re.compile(r"^(?P<project>javm-ffmpeg)-(?P<platform>linux|macos|windows)-(?P<arch>x64|arm64)-(?P<version>n[^-]+)-(?P<stamp>\d{8}-\d{6})\.zip$")
+          release_dir = "release"
+          assets = sorted(name for name in os.listdir(release_dir) if name.endswith(".zip"))
+          pattern = re.compile(r"^(?P<project>javm-ffmpeg)-(?P<platform>linux|macos|windows)-(?P<arch>x64|arm64)-(?P<version>n[^-]+)-(?P<stamp>\d{8}-\d{6})\.zip$")
 
-manifest_assets = []
-for asset_name in assets:
-    match = pattern.match(asset_name)
-    asset_info = {"file": asset_name}
-    if match:
-        asset_info.update(match.groupdict())
-    manifest_assets.append(asset_info)
+          manifest_assets = []
+          for asset_name in assets:
+            match = pattern.match(asset_name)
+            asset_info = {"file": asset_name}
+            if match:
+              asset_info.update(match.groupdict())
+            manifest_assets.append(asset_info)
 
-manifest = {
-    "project": "javm-ffmpeg",
-    "release_tag": os.environ["RELEASE_TAG"],
-    "release_name": os.environ["RELEASE_NAME"],
-    "ffmpeg_version": os.environ["FFMPEG_VERSION"],
-    "build_stamp_utc": os.environ["BUILD_STAMP"],
-    "assets": manifest_assets,
-}
+          manifest = {
+            "project": "javm-ffmpeg",
+            "release_tag": os.environ["RELEASE_TAG"],
+            "release_name": os.environ["RELEASE_NAME"],
+            "ffmpeg_version": os.environ["FFMPEG_VERSION"],
+            "build_stamp_utc": os.environ["BUILD_STAMP"],
+            "assets": manifest_assets,
+          }
 
-with open(os.path.join(release_dir, "release-manifest.json"), "w", encoding="utf-8") as output_file:
-    json.dump(manifest, output_file, indent=2, ensure_ascii=True)
-    output_file.write("\n")
-PY
+          with open(os.path.join(release_dir, "release-manifest.json"), "w", encoding="utf-8") as output_file:
+            json.dump(manifest, output_file, indent=2, ensure_ascii=True)
+            output_file.write("\n")
+          PY
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
