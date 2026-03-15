@@ -297,7 +297,13 @@ configure_ffmpeg() {
     log "configuring FFmpeg"
     (
         cd "${SOURCE_DIR}"
-        ./configure "${CONFIGURE_FLAGS[@]}"
+        if ! ./configure "${CONFIGURE_FLAGS[@]}"; then
+            if [ -f ffbuild/config.log ]; then
+                printf '\n[build] configure failed; ffbuild/config.log tail follows\n' >&2
+                tail -n 120 ffbuild/config.log >&2 || true
+            fi
+            exit 1
+        fi
     )
 }
 
