@@ -15,7 +15,7 @@ jobs:
         shell: msys2 {0}
 
     env:
-      FFMPEG_VERSION: n7.1.1
+      FFMPEG_VERSION: n8.0.1
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:

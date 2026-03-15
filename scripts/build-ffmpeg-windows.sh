@@ -8,7 +8,7 @@ SOURCE_DIR="${BUILD_DIR}/FFmpeg"
 ARTIFACT_DIR="${ROOT_DIR}/dist/ffmpeg-windows-x86_64"
 BUILD_INFO_DIR="${ARTIFACT_DIR}/build-info"
 HOST_FFMPEG=${HOST_FFMPEG:-$(command -v ffmpeg || true)}
-FFMPEG_VERSION=${FFMPEG_VERSION:-n7.1.1}
+FFMPEG_VERSION=${FFMPEG_VERSION:-n8.0.1}
 
 log() {
     printf '[build] %s\n' "$*"
@@ -42,13 +42,13 @@ collect_video_decoders() {
 
     mapfile -t discovered_decoders < <(
         "${HOST_FFMPEG}" -hide_banner -decoders \
-        | awk '/^[[:space:]]V/ { print $2 }' \
+        | awk '$1 ~ /^V/ && $2 ~ /^[A-Za-z0-9_]+$/ && $2 != "=" { print $2 }' \
         | sort -u
     )
 
     for decoder in "${discovered_decoders[@]}"; do
         case "${decoder}" in
-            lib*|*_crystalhd|*_cuvid|*_mmal|*_mediacodec|*_qsv|*_v4l2m2m)
+            lib*|*_amf|*_crystalhd|*_cuvid|*_mmal|*_mediacodec|*_qsv|*_v4l2m2m)
                 continue
                 ;;
         esac
