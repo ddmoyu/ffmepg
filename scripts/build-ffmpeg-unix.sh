@@ -31,8 +31,10 @@ require_tool() {
 
 configure_native_toolchain() {
     if [ "${TARGET_PLATFORM}" = "macos" ]; then
-        export CC=${CC:-clang}
-        export CXX=${CXX:-clang++}
+        export SDKROOT=${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}
+        export CC=${CC:-$(xcrun --find clang)}
+        export CXX=${CXX:-$(xcrun --find clang++)}
+        export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-12.0}
     fi
 }
 
@@ -316,6 +318,12 @@ configure_ffmpeg() {
             "--arch=${FFMPEG_ARCH}"
             "--target-os=${CONFIGURE_TARGET_OS}"
             --pkg-config-flags=--static
+            "${CONFIGURE_FLAGS[@]}"
+        )
+    elif [ "${TARGET_PLATFORM}" = "macos" ]; then
+        CONFIGURE_FLAGS=(
+            "--cc=${CC}"
+            "--cxx=${CXX}"
             "${CONFIGURE_FLAGS[@]}"
         )
     fi

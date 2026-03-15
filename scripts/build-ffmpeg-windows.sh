@@ -13,6 +13,7 @@ ARTIFACT_DIR="${ROOT_DIR}/dist/${ARTIFACT_BASENAME}"
 BUILD_INFO_DIR="${ARTIFACT_DIR}/build-info"
 CONFIGURE_TARGET_OS=${CONFIGURE_TARGET_OS:-mingw32}
 FFMPEG_BIN_NAME=${FFMPEG_BIN_NAME:-ffmpeg.exe}
+EXTRA_LDEXEFLAGS=${EXTRA_LDEXEFLAGS:-}
 HOST_FFMPEG=${HOST_FFMPEG:-$(command -v ffmpeg || true)}
 FFMPEG_VERSION=${FFMPEG_VERSION:-n8.0.1}
 
@@ -43,6 +44,24 @@ resolve_ffmpeg_arch() {
             ;;
         *)
             fail "unsupported TARGET_ARCH for Windows build: ${TARGET_ARCH}"
+            ;;
+    esac
+}
+
+configure_linker_flags() {
+    if [ -n "${EXTRA_LDEXEFLAGS}" ]; then
+        return
+    fi
+
+    case "${TARGET_ARCH}" in
+        x64|x86_64)
+            EXTRA_LDEXEFLAGS='-static -static-libgcc'
+            ;;
+        arm64|aarch64)
+            EXTRA_LDEXEFLAGS='-static'
+            ;;
+        *)
+            fail "unsupported TARGET_ARCH for Windows linker flags: ${TARGET_ARCH}"
             ;;
     esac
 }
@@ -254,7 +273,6 @@ configure_ffmpeg() {
         "--target-os=${CONFIGURE_TARGET_OS}"
         --pkg-config-flags=--static
         --extra-cflags=-O2\ -pipe
-        --extra-ldexeflags=-static\ -static-libgcc
         --disable-autodetect
         --disable-debug
         --disable-doc
@@ -285,6 +303,10 @@ configure_ffmpeg() {
         --enable-filter=scale
         --enable-filter=select
     )
+
+    if [ -n "${EXTRA_LDEXEFLAGS}" ]; then
+        CONFIGURE_FLAGS+=("--extra-ldexeflags=${EXTRA_LDEXEFLAGS}")
+    fi
 
     append_enable_flags decoder "${video_decoders[@]}"
     append_enable_flags demuxer "${demuxers[@]}"
@@ -340,6 +362,7 @@ finalize_artifact() {
 
 main() {
     resolve_ffmpeg_arch
+    configure_linker_flags
 
     require_tool git
     require_tool make

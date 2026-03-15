@@ -171,6 +171,24 @@ jobs:
           ARTIFACT_BASENAME: ${{ matrix.artifact_basename }}
         run: bash scripts/build-ffmpeg-unix.sh
 
+      - name: Diagnose macOS toolchain
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "brew_prefix=$(brew --prefix)"
+          echo "bash_path=$(brew --prefix)/bin/bash"
+          sw_vers
+          xcode-select -p
+          xcrun --find clang
+          xcrun --find clang++
+          xcrun --sdk macosx --show-sdk-path
+          xcrun clang --version
+          xcrun clang++ --version
+          printf 'int main(void) { return 0; }\n' > /tmp/javm-ffmpeg-toolchain-check.c
+          xcrun clang /tmp/javm-ffmpeg-toolchain-check.c -o /tmp/javm-ffmpeg-toolchain-check
+          /tmp/javm-ffmpeg-toolchain-check
+
       - name: Build FFmpeg on macOS
         if: matrix.platform == 'macos'
         shell: bash
@@ -182,6 +200,23 @@ jobs:
         run: |
           set -euo pipefail
           "$(brew --prefix)/bin/bash" scripts/build-ffmpeg-unix.sh
+
+      - name: Diagnose Windows toolchain
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          uname -a
+          echo "MSYSTEM=${MSYSTEM}"
+          command -v clang || true
+          command -v clang++ || true
+          command -v gcc || true
+          command -v pkg-config || true
+          clang --version || true
+          clang++ --version || true
+          printf 'int main(void) { return 0; }\n' > /tmp/javm-ffmpeg-toolchain-check.c
+          clang /tmp/javm-ffmpeg-toolchain-check.c -o /tmp/javm-ffmpeg-toolchain-check.exe
+          /tmp/javm-ffmpeg-toolchain-check.exe
 
       - name: Build FFmpeg on Windows
         if: matrix.platform == 'windows'
