@@ -1,4 +1,4 @@
-name: Build Windows FFmpeg
+name: Build javm-ffmpeg
 
 permissions:
   contents: write
@@ -9,124 +9,284 @@ on:
     branches:
       - main
 
-jobs:
-  build-windows-x64:
-    runs-on: windows-latest
+env:
+  PROJECT_NAME: javm-ffmpeg
+  FFMPEG_VERSION: n8.0.1
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-    defaults:
-      run:
-        shell: msys2 {0}
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      build_stamp: ${{ steps.meta.outputs.build_stamp }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+
+    steps:
+      - name: Compute release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          build_stamp="$(date -u +%Y%m%d-%H%M%S)"
+          release_tag="${PROJECT_NAME}-${FFMPEG_VERSION}-${build_stamp}"
+          release_name="${PROJECT_NAME} ${FFMPEG_VERSION} ${build_stamp} UTC"
+
+          {
+            echo "build_stamp=${build_stamp}"
+            echo "release_tag=${release_tag}"
+            echo "release_name=${release_name}"
+          } >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build ${{ matrix.artifact_basename }}
+    runs-on: ${{ matrix.runner }}
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: x64
+            ffmpeg_arch: x86_64
+            runner: ubuntu-24.04
+            artifact_basename: javm-ffmpeg-linux-x64
+            binary_name: ffmpeg
+
+          - platform: linux
+            arch: arm64
+            ffmpeg_arch: aarch64
+            runner: ubuntu-24.04-arm
+            artifact_basename: javm-ffmpeg-linux-arm64
+            binary_name: ffmpeg
+
+          - platform: macos
+            arch: x64
+            ffmpeg_arch: x86_64
+            runner: macos-15-intel
+            artifact_basename: javm-ffmpeg-macos-x64
+            binary_name: ffmpeg
+
+          - platform: macos
+            arch: arm64
+            ffmpeg_arch: aarch64
+            runner: macos-15
+            artifact_basename: javm-ffmpeg-macos-arm64
+            binary_name: ffmpeg
+
+          - platform: windows
+            arch: x64
+            ffmpeg_arch: x86_64
+            runner: windows-2025
+            msystem: MINGW64
+            artifact_basename: javm-ffmpeg-windows-x64
+            binary_name: ffmpeg.exe
+
+          - platform: windows
+            arch: arm64
+            ffmpeg_arch: aarch64
+            runner: windows-11-arm
+            msystem: CLANGARM64
+            artifact_basename: javm-ffmpeg-windows-arm64
+            binary_name: ffmpeg.exe
 
     env:
-      FFMPEG_VERSION: n8.0.1
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      ARCHIVE_NAME: ${{ matrix.artifact_basename }}-${{ env.FFMPEG_VERSION }}-${{ needs.metadata.outputs.build_stamp }}.zip
 
     steps:
       - name: Force LF line endings for checkout
+        if: matrix.platform == 'windows'
         shell: powershell
         run: git config --global core.autocrlf input
 
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Compute build metadata
-        id: build_meta
-        shell: powershell
-        run: |
-          $buildStamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
-          "build_stamp=$buildStamp" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "archive_name=ffmpeg-windows-x86_64-${{ env.FFMPEG_VERSION }}-$buildStamp.zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "release_tag=${{ env.FFMPEG_VERSION }}-$buildStamp" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
       - name: Setup MSYS2
+        if: matrix.platform == 'windows'
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem }}
           update: true
           path-type: minimal
           install: >-
             git
             make
-            nasm
             perl
             pkgconf
           pacboy: >-
             toolchain:p
             ffmpeg:p
 
-      - name: Build minimal FFmpeg
-        run: bash scripts/build-ffmpeg-windows.sh
-
-      - name: Smoke test built binary
+      - name: Install Windows x64 assembler
+        if: matrix.platform == 'windows' && matrix.arch == 'x64'
+        shell: msys2 {0}
         run: |
           set -euo pipefail
-          ARTIFACT_FFMPEG="$(pwd)/dist/ffmpeg-windows-x86_64/bin/ffmpeg.exe"
+          pacman -S --noconfirm --needed nasm
 
-          ffmpeg -hide_banner -y -f lavfi -i testsrc2=size=320x180:rate=10 -frames:v 20 sample.mp4
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential ffmpeg git make pkg-config yasm zip
 
-          "${ARTIFACT_FFMPEG}" -hide_banner -protocols | tee protocols.txt
-          "${ARTIFACT_FFMPEG}" -hide_banner -hwaccels | tee hwaccels.txt
-          "${ARTIFACT_FFMPEG}" -hide_banner -muxers | tee muxers.txt
-          "${ARTIFACT_FFMPEG}" -hide_banner -encoders | tee encoders.txt
-          "${ARTIFACT_FFMPEG}" -hide_banner -decoders | tee decoders.txt
-          "${ARTIFACT_FFMPEG}" -hide_banner -demuxers | tee demuxers.txt
+      - name: Install Linux x64 assembler
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y nasm
 
-          if grep -wEq 'http|https|rtmp|rtsp|tcp|udp' protocols.txt; then
-            echo "unexpected network protocol enabled"
-            exit 1
-          fi
+      - name: Install macOS build dependencies
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew update
+          brew install ffmpeg nasm pkg-config
 
-          if tail -n +2 hwaccels.txt | grep -q '[[:alnum:]]'; then
-            echo "unexpected hardware acceleration enabled"
-            exit 1
-          fi
+      - name: Mark scripts executable on Unix
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: chmod +x scripts/*.sh
 
-          grep -wq image2 muxers.txt
-          grep -wq mjpeg encoders.txt
-          grep -wq h264 decoders.txt
-          grep -wq hevc decoders.txt
-          grep -wq vp9 decoders.txt
-          grep -wq av1 decoders.txt
-          grep -Eq 'mov,mp4,m4a,3gp,3g2,mj2| mov ' demuxers.txt
-          grep -Eq 'matroska,webm| matroska ' demuxers.txt
-          grep -Eq 'avi ' demuxers.txt
-          grep -Eq 'mpegts ' demuxers.txt
+      - name: Mark scripts executable on Windows
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
+        run: chmod +x scripts/*.sh
 
-          mkdir -p smoke-output
-          "${ARTIFACT_FFMPEG}" -hide_banner -y -i sample.mp4 -vf "fps=2,scale=160:-1" smoke-output/frame-%03d.jpg
+      - name: Build FFmpeg on Unix
+        if: matrix.platform != 'windows'
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          FFMPEG_ARCH: ${{ matrix.ffmpeg_arch }}
+          ARTIFACT_BASENAME: ${{ matrix.artifact_basename }}
+        run: bash scripts/build-ffmpeg-unix.sh
 
-          test -f smoke-output/frame-001.jpg
-          test "$(find smoke-output -name '*.jpg' | wc -l)" -gt 0
+      - name: Build FFmpeg on Windows
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          FFMPEG_ARCH: ${{ matrix.ffmpeg_arch }}
+          ARTIFACT_BASENAME: ${{ matrix.artifact_basename }}
+        run: bash scripts/build-ffmpeg-windows.sh
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ffmpeg-windows-x86_64-${{ env.FFMPEG_VERSION }}-${{ steps.build_meta.outputs.build_stamp }}
-          path: dist/ffmpeg-windows-x86_64
+      - name: Smoke test on Unix
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: bash scripts/smoke-test-ffmpeg.sh "dist/${{ matrix.artifact_basename }}/bin/${{ matrix.binary_name }}"
 
-      - name: Package release archive
+      - name: Smoke test on Windows
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
+        run: bash scripts/smoke-test-ffmpeg.sh "dist/${{ matrix.artifact_basename }}/bin/${{ matrix.binary_name }}"
+
+      - name: Package release archive on Unix
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cd dist
+          zip -r "../release/${ARCHIVE_NAME}" "${{ matrix.artifact_basename }}"
+
+      - name: Package release archive on Windows
+        if: matrix.platform == 'windows'
         shell: powershell
         run: |
-          $archivePath = Join-Path release "${{ steps.build_meta.outputs.archive_name }}"
-
           New-Item -ItemType Directory -Force -Path release | Out-Null
+          $archivePath = Join-Path release "${{ env.ARCHIVE_NAME }}"
           if (Test-Path $archivePath) {
             Remove-Item $archivePath -Force
           }
 
-          Compress-Archive -Path dist/ffmpeg-windows-x86_64/* -DestinationPath $archivePath
+          Compress-Archive -Path dist/${{ matrix.artifact_basename }} -DestinationPath $archivePath
+
+      - name: Upload packaged archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-archive-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release/${{ env.ARCHIVE_NAME }}
+
+  publish-release:
+    runs-on: ubuntu-latest
+    needs:
+      - metadata
+      - build
+
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: release-archive-*
+          merge-multiple: true
+
+      - name: Generate release manifest
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+          RELEASE_NAME: ${{ needs.metadata.outputs.release_name }}
+          BUILD_STAMP: ${{ needs.metadata.outputs.build_stamp }}
+          FFMPEG_VERSION: ${{ env.FFMPEG_VERSION }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+import json
+import os
+import re
+
+release_dir = "release"
+assets = sorted(name for name in os.listdir(release_dir) if name.endswith(".zip"))
+pattern = re.compile(r"^(?P<project>javm-ffmpeg)-(?P<platform>linux|macos|windows)-(?P<arch>x64|arm64)-(?P<version>n[^-]+)-(?P<stamp>\d{8}-\d{6})\.zip$")
+
+manifest_assets = []
+for asset_name in assets:
+    match = pattern.match(asset_name)
+    asset_info = {"file": asset_name}
+    if match:
+        asset_info.update(match.groupdict())
+    manifest_assets.append(asset_info)
+
+manifest = {
+    "project": "javm-ffmpeg",
+    "release_tag": os.environ["RELEASE_TAG"],
+    "release_name": os.environ["RELEASE_NAME"],
+    "ffmpeg_version": os.environ["FFMPEG_VERSION"],
+    "build_stamp_utc": os.environ["BUILD_STAMP"],
+    "assets": manifest_assets,
+}
+
+with open(os.path.join(release_dir, "release-manifest.json"), "w", encoding="utf-8") as output_file:
+    json.dump(manifest, output_file, indent=2, ensure_ascii=True)
+    output_file.write("\n")
+PY
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.build_meta.outputs.release_tag }}
-          name: FFmpeg ${{ env.FFMPEG_VERSION }} build ${{ steps.build_meta.outputs.build_stamp }} UTC
+          tag_name: ${{ needs.metadata.outputs.release_tag }}
+          name: ${{ needs.metadata.outputs.release_name }}
           body: |
-            Automated Windows x86_64 FFmpeg build.
+            Automated cross-platform javm-ffmpeg build.
 
             Upstream FFmpeg tag: ${{ env.FFMPEG_VERSION }}
+            Build timestamp (UTC): ${{ needs.metadata.outputs.build_stamp }}
             Source revision: ${{ github.sha }}
+
+            Assets include Linux, macOS, and Windows builds for x64 and arm64.
           prerelease: true
           make_latest: false
           generate_release_notes: false
-          files: release/${{ steps.build_meta.outputs.archive_name }}
+          files: |
+            release/*.zip
+            release/release-manifest.json

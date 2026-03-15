@@ -4,17 +4,17 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BUILD_DIR="${ROOT_DIR}/build"
-TARGET_PLATFORM=${TARGET_PLATFORM:-windows}
+TARGET_PLATFORM=${TARGET_PLATFORM:-linux}
 TARGET_ARCH=${TARGET_ARCH:-x64}
 FFMPEG_ARCH=${FFMPEG_ARCH:-}
 ARTIFACT_BASENAME=${ARTIFACT_BASENAME:-javm-ffmpeg-${TARGET_PLATFORM}-${TARGET_ARCH}}
 SOURCE_DIR="${BUILD_DIR}/FFmpeg-${TARGET_PLATFORM}-${TARGET_ARCH}"
 ARTIFACT_DIR="${ROOT_DIR}/dist/${ARTIFACT_BASENAME}"
 BUILD_INFO_DIR="${ARTIFACT_DIR}/build-info"
-CONFIGURE_TARGET_OS=${CONFIGURE_TARGET_OS:-mingw32}
-FFMPEG_BIN_NAME=${FFMPEG_BIN_NAME:-ffmpeg.exe}
 HOST_FFMPEG=${HOST_FFMPEG:-$(command -v ffmpeg || true)}
 FFMPEG_VERSION=${FFMPEG_VERSION:-n8.0.1}
+FFMPEG_BIN_NAME=${FFMPEG_BIN_NAME:-ffmpeg}
+CONFIGURE_TARGET_OS=${CONFIGURE_TARGET_OS:-}
 
 log() {
     printf '[build] %s\n' "$*"
@@ -27,6 +27,24 @@ fail() {
 
 require_tool() {
     command -v "$1" >/dev/null 2>&1 || fail "missing required tool: $1"
+}
+
+resolve_target_os() {
+    if [ -n "${CONFIGURE_TARGET_OS}" ]; then
+        return
+    fi
+
+    case "${TARGET_PLATFORM}" in
+        linux)
+            CONFIGURE_TARGET_OS=linux
+            ;;
+        macos)
+            CONFIGURE_TARGET_OS=darwin
+            ;;
+        *)
+            fail "unsupported TARGET_PLATFORM for Unix build: ${TARGET_PLATFORM}"
+            ;;
+    esac
 }
 
 resolve_ffmpeg_arch() {
@@ -42,9 +60,13 @@ resolve_ffmpeg_arch() {
             FFMPEG_ARCH=aarch64
             ;;
         *)
-            fail "unsupported TARGET_ARCH for Windows build: ${TARGET_ARCH}"
+            fail "unsupported TARGET_ARCH for Unix build: ${TARGET_ARCH}"
             ;;
     esac
+}
+
+cpu_count() {
+    getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4
 }
 
 clean_dirs() {
@@ -254,7 +276,6 @@ configure_ffmpeg() {
         "--target-os=${CONFIGURE_TARGET_OS}"
         --pkg-config-flags=--static
         --extra-cflags=-O2\ -pipe
-        --extra-ldexeflags=-static\ -static-libgcc
         --disable-autodetect
         --disable-debug
         --disable-doc
@@ -305,7 +326,7 @@ build_ffmpeg() {
     log "building FFmpeg"
     (
         cd "${SOURCE_DIR}"
-        make -j"$(nproc)"
+        make -j"$(cpu_count)"
         make install
     )
 }
@@ -333,6 +354,7 @@ finalize_artifact() {
 }
 
 main() {
+    resolve_target_os
     resolve_ffmpeg_arch
 
     require_tool git
