@@ -149,7 +149,7 @@ jobs:
         run: |
           set -euo pipefail
           brew update
-          brew install ffmpeg nasm pkg-config
+          brew install bash ffmpeg nasm pkg-config
 
       - name: Mark scripts executable on Unix
         if: matrix.platform != 'windows'
@@ -162,7 +162,7 @@ jobs:
         run: chmod +x scripts/*.sh
 
       - name: Build FFmpeg on Unix
-        if: matrix.platform != 'windows'
+        if: matrix.platform == 'linux'
         shell: bash
         env:
           TARGET_PLATFORM: ${{ matrix.platform }}
@@ -170,6 +170,18 @@ jobs:
           FFMPEG_ARCH: ${{ matrix.ffmpeg_arch }}
           ARTIFACT_BASENAME: ${{ matrix.artifact_basename }}
         run: bash scripts/build-ffmpeg-unix.sh
+
+      - name: Build FFmpeg on macOS
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          FFMPEG_ARCH: ${{ matrix.ffmpeg_arch }}
+          ARTIFACT_BASENAME: ${{ matrix.artifact_basename }}
+        run: |
+          set -euo pipefail
+          "$(brew --prefix)/bin/bash" scripts/build-ffmpeg-unix.sh
 
       - name: Build FFmpeg on Windows
         if: matrix.platform == 'windows'
@@ -182,9 +194,16 @@ jobs:
         run: bash scripts/build-ffmpeg-windows.sh
 
       - name: Smoke test on Unix
-        if: matrix.platform != 'windows'
+        if: matrix.platform == 'linux'
         shell: bash
         run: bash scripts/smoke-test-ffmpeg.sh "dist/${{ matrix.artifact_basename }}/bin/${{ matrix.binary_name }}"
+
+      - name: Smoke test on macOS
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$(brew --prefix)/bin/bash" scripts/smoke-test-ffmpeg.sh "dist/${{ matrix.artifact_basename }}/bin/${{ matrix.binary_name }}"
 
       - name: Smoke test on Windows
         if: matrix.platform == 'windows'

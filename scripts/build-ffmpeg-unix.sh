@@ -29,6 +29,13 @@ require_tool() {
     command -v "$1" >/dev/null 2>&1 || fail "missing required tool: $1"
 }
 
+configure_native_toolchain() {
+    if [ "${TARGET_PLATFORM}" = "macos" ]; then
+        export CC=${CC:-clang}
+        export CXX=${CXX:-clang++}
+    fi
+}
+
 resolve_target_os() {
     if [ -n "${CONFIGURE_TARGET_OS}" ]; then
         return
@@ -272,9 +279,6 @@ configure_ffmpeg() {
 
     CONFIGURE_FLAGS=(
         "--prefix=${ARTIFACT_DIR}"
-        "--arch=${FFMPEG_ARCH}"
-        "--target-os=${CONFIGURE_TARGET_OS}"
-        --pkg-config-flags=--static
         --extra-cflags=-O2\ -pipe
         --disable-autodetect
         --disable-debug
@@ -307,6 +311,15 @@ configure_ffmpeg() {
         --enable-filter=select
     )
 
+    if [ "${TARGET_PLATFORM}" = "linux" ]; then
+        CONFIGURE_FLAGS=(
+            "--arch=${FFMPEG_ARCH}"
+            "--target-os=${CONFIGURE_TARGET_OS}"
+            --pkg-config-flags=--static
+            "${CONFIGURE_FLAGS[@]}"
+        )
+    fi
+
     append_enable_flags decoder "${video_decoders[@]}"
     append_enable_flags demuxer "${demuxers[@]}"
     append_enable_flags parser "${video_parsers[@]}"
@@ -318,7 +331,13 @@ configure_ffmpeg() {
     log "configuring FFmpeg"
     (
         cd "${SOURCE_DIR}"
-        ./configure "${CONFIGURE_FLAGS[@]}"
+        if ! ./configure "${CONFIGURE_FLAGS[@]}"; then
+            if [ -f ffbuild/config.log ]; then
+                printf '\n[build] configure failed; ffbuild/config.log tail follows\n' >&2
+                tail -n 120 ffbuild/config.log >&2 || true
+            fi
+            exit 1
+        fi
     )
 }
 
@@ -356,6 +375,7 @@ finalize_artifact() {
 main() {
     resolve_target_os
     resolve_ffmpeg_arch
+    configure_native_toolchain
 
     require_tool git
     require_tool make
