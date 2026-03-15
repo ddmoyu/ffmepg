@@ -16,6 +16,8 @@ FFMPEG_BIN_NAME=${FFMPEG_BIN_NAME:-ffmpeg.exe}
 EXTRA_LDEXEFLAGS=${EXTRA_LDEXEFLAGS:-}
 HOST_FFMPEG=${HOST_FFMPEG:-$(command -v ffmpeg || true)}
 FFMPEG_VERSION=${FFMPEG_VERSION:-n8.0.1}
+WIN_CC=${WIN_CC:-}
+WIN_CXX=${WIN_CXX:-}
 
 log() {
     printf '[build] %s\n' "$*"
@@ -64,6 +66,24 @@ configure_linker_flags() {
             fail "unsupported TARGET_ARCH for Windows linker flags: ${TARGET_ARCH}"
             ;;
     esac
+}
+
+detect_compiler() {
+    if [ -n "${WIN_CC}" ]; then
+        return
+    fi
+
+    if command -v gcc >/dev/null 2>&1; then
+        WIN_CC=gcc
+        WIN_CXX=g++
+    elif command -v clang >/dev/null 2>&1; then
+        WIN_CC=clang
+        WIN_CXX=clang++
+    else
+        fail "no suitable C compiler found (tried gcc, clang)"
+    fi
+
+    log "detected compiler: ${WIN_CC}"
 }
 
 clean_dirs() {
@@ -122,8 +142,10 @@ collect_video_parsers() {
         awk '
             BEGIN { RS = "}," }
             /\.id[[:space:]]*=[[:space:]]*AV_CODEC_ID_[A-Z0-9_]+/ && /\.type[[:space:]]*=[[:space:]]*AVMEDIA_TYPE_VIDEO/ {
-                if (match($0, /\.id[[:space:]]*=[[:space:]]*(AV_CODEC_ID_[A-Z0-9_]+)/, match_result)) {
-                    print match_result[1]
+                if (match($0, /\.id[[:space:]]*=[[:space:]]*AV_CODEC_ID_[A-Z0-9_]+/)) {
+                    m = substr($0, RSTART, RLENGTH)
+                    sub(/.*=[[:space:]]*/, "", m)
+                    print m
                 }
             }
         ' "${SOURCE_DIR}/libavcodec/codec_desc.c" \
@@ -271,6 +293,8 @@ configure_ffmpeg() {
         "--prefix=${ARTIFACT_DIR}"
         "--arch=${FFMPEG_ARCH}"
         "--target-os=${CONFIGURE_TARGET_OS}"
+        "--cc=${WIN_CC}"
+        "--cxx=${WIN_CXX}"
         --pkg-config-flags=--static
         --extra-cflags=-O2\ -pipe
         --disable-autodetect
@@ -363,6 +387,7 @@ finalize_artifact() {
 main() {
     resolve_ffmpeg_arch
     configure_linker_flags
+    detect_compiler
 
     require_tool git
     require_tool make

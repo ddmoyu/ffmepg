@@ -214,8 +214,13 @@ jobs:
           command -v pkg-config || true
           clang --version || true
           clang++ --version || true
+          gcc --version || true
           printf 'int main(void) { return 0; }\n' > /tmp/javm-ffmpeg-toolchain-check.c
-          clang /tmp/javm-ffmpeg-toolchain-check.c -o /tmp/javm-ffmpeg-toolchain-check.exe
+          if command -v gcc >/dev/null 2>&1; then
+            gcc /tmp/javm-ffmpeg-toolchain-check.c -o /tmp/javm-ffmpeg-toolchain-check.exe
+          else
+            clang /tmp/javm-ffmpeg-toolchain-check.c -o /tmp/javm-ffmpeg-toolchain-check.exe
+          fi
           /tmp/javm-ffmpeg-toolchain-check.exe
 
       - name: Build FFmpeg on Windows

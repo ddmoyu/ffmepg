@@ -134,8 +134,10 @@ collect_video_parsers() {
         awk '
             BEGIN { RS = "}," }
             /\.id[[:space:]]*=[[:space:]]*AV_CODEC_ID_[A-Z0-9_]+/ && /\.type[[:space:]]*=[[:space:]]*AVMEDIA_TYPE_VIDEO/ {
-                if (match($0, /\.id[[:space:]]*=[[:space:]]*(AV_CODEC_ID_[A-Z0-9_]+)/, match_result)) {
-                    print match_result[1]
+                if (match($0, /\.id[[:space:]]*=[[:space:]]*AV_CODEC_ID_[A-Z0-9_]+/)) {
+                    m = substr($0, RSTART, RLENGTH)
+                    sub(/.*=[[:space:]]*/, "", m)
+                    print m
                 }
             }
         ' "${SOURCE_DIR}/libavcodec/codec_desc.c" \
@@ -322,6 +324,8 @@ configure_ffmpeg() {
         )
     elif [ "${TARGET_PLATFORM}" = "macos" ]; then
         CONFIGURE_FLAGS=(
+            "--arch=${FFMPEG_ARCH}"
+            "--target-os=${CONFIGURE_TARGET_OS}"
             "--cc=${CC}"
             "--cxx=${CXX}"
             "${CONFIGURE_FLAGS[@]}"
