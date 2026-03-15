@@ -345,8 +345,8 @@ jobs:
             Source revision: ${{ github.sha }}
 
             Assets include Linux, macOS, and Windows builds for x64 and arm64.
-          prerelease: true
-          make_latest: false
+          prerelease: false
+          make_latest: true
           generate_release_notes: false
           files: |
             release/*.zip
