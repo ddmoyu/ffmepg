@@ -61,16 +61,99 @@ collect_video_decoders() {
 
 collect_video_parsers() {
     local -n result_ref=$1
+    local -a all_parsers=()
+    local -a video_codec_ids=()
+    local -a source_files=()
+    local parser
+    local config_key
+    local makefile_key
+    local makefile_block
+    local codec_id
+    local source_file
+    local has_video_codec
+    local -A video_codec_lookup=()
 
-    [ -n "${HOST_FFMPEG}" ] || fail "HOST_FFMPEG is not available; install a host ffmpeg package for parser discovery"
+    collect_configure_list parsers all_parsers
 
-    mapfile -t result_ref < <(
-        "${HOST_FFMPEG}" -hide_banner -parsers \
-        | awk '/^[[:space:]]V/ { print $2 }' \
+    mapfile -t video_codec_ids < <(
+        awk '
+            BEGIN { RS = "}," }
+            /\.id[[:space:]]*=[[:space:]]*AV_CODEC_ID_[A-Z0-9_]+/ && /\.type[[:space:]]*=[[:space:]]*AVMEDIA_TYPE_VIDEO/ {
+                if (match($0, /\.id[[:space:]]*=[[:space:]]*(AV_CODEC_ID_[A-Z0-9_]+)/, match_result)) {
+                    print match_result[1]
+                }
+            }
+        ' "${SOURCE_DIR}/libavcodec/codec_desc.c" \
         | sort -u
     )
 
-    [ ${#result_ref[@]} -gt 0 ] || fail "failed to discover video parsers from host ffmpeg"
+    [ ${#video_codec_ids[@]} -gt 0 ] || fail "failed to discover video codec ids from FFmpeg source"
+
+    for codec_id in "${video_codec_ids[@]}"; do
+        video_codec_lookup["${codec_id}"]=1
+    done
+
+    for parser in "${all_parsers[@]}"; do
+        config_key=$(printf '%s' "${parser}" | tr '[:lower:]' '[:upper:]')_PARSER
+        makefile_key="OBJS-\$(CONFIG_${config_key})"
+        makefile_block=$(awk -v key="${makefile_key}" '
+            collecting {
+                print
+                if ($0 !~ /\\[[:space:]]*$/) {
+                    exit
+                }
+                next
+            }
+            index($0, key) == 1 {
+                collecting = 1
+                print
+                if ($0 !~ /\\[[:space:]]*$/) {
+                    exit
+                }
+            }
+        ' "${SOURCE_DIR}/libavcodec/Makefile")
+
+        source_files=()
+        if [ -n "${makefile_block}" ]; then
+            while IFS= read -r source_file; do
+                [ -n "${source_file}" ] || continue
+                if [ -f "${SOURCE_DIR}/libavcodec/${source_file}" ]; then
+                    source_files+=("${SOURCE_DIR}/libavcodec/${source_file}")
+                fi
+            done < <(
+                printf '%s\n' "${makefile_block}" \
+                | tr '\\' ' ' \
+                | tr '[:space:]' '\n' \
+                | grep -E '\.o$' \
+                | sed 's/\.o$/.c/' \
+                | sort -u
+            )
+        fi
+
+        if [ ${#source_files[@]} -eq 0 ]; then
+            log "could not resolve sources for parser ${parser}; enabling it conservatively"
+            result_ref+=("${parser}")
+            continue
+        fi
+
+        has_video_codec=0
+        while IFS= read -r codec_id; do
+            if [ -n "${video_codec_lookup["${codec_id}"]+x}" ]; then
+                has_video_codec=1
+                break
+            fi
+        done < <(
+            grep -hoE 'AV_CODEC_ID_[A-Z0-9_]+' "${source_files[@]}" \
+            | grep -v '^AV_CODEC_ID_NONE$' \
+            | sort -u
+        )
+
+        if [ ${has_video_codec} -eq 1 ]; then
+            result_ref+=("${parser}")
+        fi
+    done
+
+    [ ${#result_ref[@]} -gt 0 ] || fail "failed to discover video parsers from FFmpeg source"
 }
 
 collect_configure_list() {
